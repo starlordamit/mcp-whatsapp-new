@@ -61,6 +61,8 @@ export function loadConfig(): Config {
   const token = process.env.WAXUM_TOKEN ?? randomBytes(24).toString('hex');
   const binaryPath = required('WAXUM_BINARY_PATH');
   const workdir = path.resolve(process.env.WAXUM_WORKDIR ?? path.dirname(binaryPath));
+  const databaseUrl =
+    process.env.WAXUM_DATABASE_URL ?? `sqlite://${path.join(workdir, 'waxum.db')}`;
 
   return {
     mode,
@@ -74,6 +76,7 @@ export function loadConfig(): Config {
       env: {
         SUPERADMIN_TOKEN: token,
         PORT: String(port),
+        DATABASE_URL: databaseUrl,
       },
     },
   };
