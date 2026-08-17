@@ -47,6 +47,7 @@ WAXUM_WORKDIR=/path/to/waxum/data   # optional, default: binary's directory
 WAXUM_PORT=3451                     # optional, default 3451
 WAXUM_TOKEN=<superadmin token>      # optional, a random one is generated if unset
 WAXUM_SESSION_ID=<the session to operate on>
+WAXUM_DATABASE_URL=sqlite:///data/waxum.db # optional
 ```
 
 In spawn mode the token becomes the spawned process's
@@ -54,6 +55,10 @@ In spawn mode the token becomes the spawned process's
 token needs to be minted ahead of time. The child process's stdout
 and stderr are forwarded to this server's stderr (never stdout, which
 is reserved for the MCP protocol channel).
+
+Spawn mode uses SQLite by default at `<WAXUM_WORKDIR>/waxum.db`, keeping
+the MCP server zero-config and restart-safe. Set `WAXUM_DATABASE_URL` to
+an explicit `sqlite://` path, PostgreSQL URL, or MySQL URL when needed.
 
 ## Development
 
