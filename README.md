@@ -229,11 +229,12 @@ docker compose --profile local-waxum up -d --build
 The new local Waxum data volume will not contain an existing paired WhatsApp
 session. Pair `WAXUM_SESSION_ID` against it before invoking WhatsApp tools.
 
-The MCP service exposes port 8088 only on the Compose network; it does not claim
-host port 8088. Configure the hosting gateway/reverse proxy to target service
-`mcp` on container port 8088. Waxum and NATS also stay private. Persistent named
-volumes retain Waxum's database, WhatsApp session state, NATS state, and
-downloaded MCP media across restarts.
+The MCP service publishes host port 8088 by default. Override only the host side
+with `MCP_BIND_PORT` if necessary. Configure the hosting gateway/reverse proxy
+to target service `mcp` on container port 8088 (or host port 8088 when the
+platform routes through the Docker host). Waxum and NATS stay private.
+Persistent named volumes retain Waxum's database, WhatsApp session state, NATS
+state, and downloaded MCP media across restarts.
 
 Check the routes through the public HTTPS domain before configuring ChatGPT:
 

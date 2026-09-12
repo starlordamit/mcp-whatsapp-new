@@ -51,8 +51,8 @@ services:
       WAXUM_MEDIA_DIR: /app/media
     volumes:
       - mcp_media:/app/media
-    expose:
-      - "8088"
+    ports:
+      - "${MCP_BIND_PORT:-8088}:8088"
     restart: unless-stopped
 
 volumes:
