@@ -45,6 +45,7 @@ export class LocalOAuthServer {
         scopes_supported: ['mcp', 'offline_access'],
         code_challenge_methods_supported: ['S256'],
         token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        authorization_response_iss_parameter_supported: true,
       });
       return true;
     }
@@ -165,6 +166,7 @@ export class LocalOAuthServer {
 
     const redirect = new URL(redirectUri);
     redirect.searchParams.set('code', code);
+    redirect.searchParams.set('iss', this.config.issuer);
     const state = form.get('state');
     if (state) redirect.searchParams.set('state', state);
     res.writeHead(302, { Location: redirect.toString(), 'Cache-Control': 'no-store' });

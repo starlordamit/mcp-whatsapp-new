@@ -69,6 +69,7 @@ The built-in OAuth server provides:
 - `GET/POST /oauth/authorize`
 - `POST /oauth/token`
 - Authorization Code flow with mandatory PKCE S256
+- RFC 9207 authorization-response issuer binding for stable callbacks
 - One-hour signed access tokens and 30-day refresh tokens
 
 Generate independent secrets, for example:
