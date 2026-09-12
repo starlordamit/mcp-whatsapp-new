@@ -68,6 +68,7 @@ The built-in OAuth server provides:
 - `GET /.well-known/oauth-protected-resource/mcp`
 - `GET/POST /oauth/authorize`
 - `POST /oauth/token`
+- `POST /oauth/register` for Dynamic Client Registration (DCR)
 - Authorization Code flow with mandatory PKCE S256
 - RFC 9207 authorization-response issuer binding for stable callbacks
 - One-hour signed access tokens and 30-day refresh tokens
@@ -119,8 +120,9 @@ location / {
 
 In ChatGPT web, enable developer mode for the eligible workspace/account,
 create a custom MCP app, set its endpoint to
-`https://whatsappmcp.example.com/mcp`, select OAuth, and enter
-`OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET`. During connection, sign into the
+`https://whatsappmcp.example.com/mcp`, and select OAuth. Dynamic Client
+Registration lets ChatGPT configure its client automatically, so the MCP URL
+is the only server value required in the form. During connection, sign into the
 local authorization page with `OAUTH_USERNAME` and `OAUTH_PASSWORD`. Then scan
 the tools and enable the draft app. The endpoint
 must be reachable from the public internet with a valid HTTPS certificate; a

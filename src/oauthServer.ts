@@ -14,6 +14,13 @@ interface AuthorizationCode {
   expiresAt: number;
 }
 
+interface OAuthClient {
+  id: string;
+  secretHash?: string;
+  redirectUris: string[];
+  tokenEndpointAuthMethod: 'client_secret_basic' | 'client_secret_post' | 'none';
+}
+
 export interface OAuthConfig {
   issuer: string;
   clientId: string;
@@ -40,11 +47,12 @@ export class LocalOAuthServer {
         issuer: this.config.issuer,
         authorization_endpoint: `${this.config.issuer}/oauth/authorize`,
         token_endpoint: `${this.config.issuer}/oauth/token`,
+        registration_endpoint: `${this.config.issuer}/oauth/register`,
         response_types_supported: ['code'],
         grant_types_supported: ['authorization_code', 'refresh_token'],
         scopes_supported: ['mcp', 'offline_access'],
         code_challenge_methods_supported: ['S256'],
-        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post'],
+        token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post', 'none'],
         authorization_response_iss_parameter_supported: true,
       });
       return true;
@@ -79,6 +87,12 @@ export class LocalOAuthServer {
     if (url.pathname === '/oauth/token') {
       if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST');
       await this.token(req, res);
+      return true;
+    }
+
+    if (url.pathname === '/oauth/register') {
+      if (req.method !== 'POST') return this.methodNotAllowed(res, 'POST');
+      await this.registerClient(req, res);
       return true;
     }
 
@@ -157,7 +171,7 @@ export class LocalOAuthServer {
     const code = randomBytes(32).toString('base64url');
     const redirectUri = form.get('redirect_uri')!;
     this.codes.set(code, {
-      clientId: this.config.clientId,
+      clientId: form.get('client_id')!,
       redirectUri,
       codeChallenge: form.get('code_challenge')!,
       scope: normalizeScope(form.get('scope'))!,
@@ -175,7 +189,8 @@ export class LocalOAuthServer {
 
   private async token(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const form = await readForm(req);
-    if (!this.validateClient(req, form)) {
+    const client = this.validateClient(req, form);
+    if (!client) {
       res.setHeader('WWW-Authenticate', 'Basic realm="oauth-token"');
       this.sendJson(res, 401, { error: 'invalid_client' });
       return;
@@ -189,7 +204,7 @@ export class LocalOAuthServer {
       if (
         !code ||
         code.expiresAt < Date.now() ||
-        code.clientId !== this.config.clientId ||
+        code.clientId !== client.id ||
         code.redirectUri !== form.get('redirect_uri') ||
         !verifyPkce(form.get('code_verifier') ?? '', code.codeChallenge)
       ) {
@@ -220,14 +235,55 @@ export class LocalOAuthServer {
     this.sendJson(res, 400, { error: 'unsupported_grant_type' });
   }
 
+  private async registerClient(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const redirectUris = Array.isArray(body.redirect_uris)
+      ? body.redirect_uris.filter((value): value is string => typeof value === 'string')
+      : [];
+    if (redirectUris.length === 0 || redirectUris.some(uri => !this.isRedirectAllowed(uri))) {
+      this.sendJson(res, 400, { error: 'invalid_redirect_uri' });
+      return;
+    }
+
+    const requestedMethod = body.token_endpoint_auth_method ?? 'client_secret_basic';
+    if (!['client_secret_basic', 'client_secret_post', 'none'].includes(String(requestedMethod))) {
+      this.sendJson(res, 400, { error: 'invalid_client_metadata' });
+      return;
+    }
+    const method = requestedMethod as OAuthClient['tokenEndpointAuthMethod'];
+    const clientSecret = method === 'none' ? undefined : randomBytes(32).toString('base64url');
+    const clientId = this.signClientRegistration({
+      redirectUris,
+      tokenEndpointAuthMethod: method,
+      secretHash: clientSecret ? hashSecret(clientSecret) : undefined,
+    });
+    this.sendJson(res, 201, {
+      client_id: clientId,
+      ...(clientSecret ? { client_secret: clientSecret, client_secret_expires_at: 0 } : {}),
+      client_id_issued_at: Math.floor(Date.now() / 1000),
+      redirect_uris: redirectUris,
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: method,
+      scope: 'mcp offline_access',
+    });
+  }
+
   private validateAuthorizationRequest(params: URLSearchParams): string | undefined {
     if (params.get('response_type') !== 'code') return 'response_type must be code';
-    if (params.get('client_id') !== this.config.clientId) return 'Unknown client_id';
+    const client = this.resolveClient(params.get('client_id') ?? '');
+    if (!client) return 'Unknown client_id';
     if (!normalizeScope(params.get('scope'))) return 'Unsupported scope';
     if (params.get('code_challenge_method') !== 'S256') return 'PKCE S256 is required';
     if (!params.get('code_challenge')) return 'code_challenge is required';
     const redirectUri = params.get('redirect_uri');
-    if (!redirectUri || !this.isRedirectAllowed(redirectUri)) return 'redirect_uri is not allowed';
+    const fixedClientFallback =
+      client.id === this.config.clientId &&
+      client.redirectUris.length === 0 &&
+      this.isRedirectAllowed(redirectUri ?? '');
+    if (!redirectUri || (!client.redirectUris.includes(redirectUri) && !fixedClientFallback)) {
+      return 'redirect_uri is not allowed';
+    }
     return undefined;
   }
 
@@ -242,7 +298,7 @@ export class LocalOAuthServer {
     }
   }
 
-  private validateClient(req: IncomingMessage, form: URLSearchParams): boolean {
+  private validateClient(req: IncomingMessage, form: URLSearchParams): OAuthClient | undefined {
     let clientId = form.get('client_id') ?? '';
     let clientSecret = form.get('client_secret') ?? '';
     const authorization = req.headers.authorization;
@@ -250,14 +306,57 @@ export class LocalOAuthServer {
       try {
         const decoded = Buffer.from(authorization.slice(6), 'base64').toString('utf8');
         const separator = decoded.indexOf(':');
-        if (separator < 0) return false;
+        if (separator < 0) return undefined;
         clientId = decodeURIComponent(decoded.slice(0, separator));
         clientSecret = decodeURIComponent(decoded.slice(separator + 1));
       } catch {
-        return false;
+        return undefined;
       }
     }
-    return secureEqual(clientId, this.config.clientId) && secureEqual(clientSecret, this.config.clientSecret);
+    const client = this.resolveClient(clientId);
+    if (!client) return undefined;
+    if (client.tokenEndpointAuthMethod === 'none') return !client.secretHash ? client : undefined;
+    return client.secretHash && secureEqual(hashSecret(clientSecret), client.secretHash)
+      ? client
+      : undefined;
+  }
+
+  private resolveClient(clientId: string): OAuthClient | undefined {
+    if (secureEqual(clientId, this.config.clientId)) {
+      return {
+        id: clientId,
+        secretHash: hashSecret(this.config.clientSecret),
+        redirectUris: this.config.redirectUris,
+        tokenEndpointAuthMethod: 'client_secret_basic',
+      };
+    }
+    const parts = clientId.split('.');
+    if (parts.length !== 3 || parts[0] !== 'dcr') return undefined;
+    const expected = createHmac('sha256', this.config.signingSecret).update(parts[1]).digest('base64url');
+    if (!secureEqual(parts[2], expected)) return undefined;
+    try {
+      const data = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as {
+        redirectUris?: unknown;
+        tokenEndpointAuthMethod?: unknown;
+        secretHash?: unknown;
+      };
+      if (!Array.isArray(data.redirectUris) || !data.redirectUris.every(uri => typeof uri === 'string')) return undefined;
+      if (!['client_secret_basic', 'client_secret_post', 'none'].includes(String(data.tokenEndpointAuthMethod))) return undefined;
+      return {
+        id: clientId,
+        redirectUris: data.redirectUris as string[],
+        tokenEndpointAuthMethod: data.tokenEndpointAuthMethod as OAuthClient['tokenEndpointAuthMethod'],
+        secretHash: typeof data.secretHash === 'string' ? data.secretHash : undefined,
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  private signClientRegistration(data: Omit<OAuthClient, 'id'>): string {
+    const payload = Buffer.from(JSON.stringify(data)).toString('base64url');
+    const signature = createHmac('sha256', this.config.signingSecret).update(payload).digest('base64url');
+    return `dcr.${payload}.${signature}`;
   }
 
   private sendTokens(res: ServerResponse, scope: string): void {
@@ -344,6 +443,24 @@ async function readForm(req: IncomingMessage): Promise<URLSearchParams> {
   return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
 }
 
+async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > FORM_LIMIT) throw new Error('Registration body too large');
+    chunks.push(buffer);
+  }
+  try {
+    const value = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
+    return value as Record<string, unknown>;
+  } catch {
+    throw new Error('Registration body must be a JSON object');
+  }
+}
+
 function verifyPkce(verifier: string, challenge: string): boolean {
   if (verifier.length < 43 || verifier.length > 128) return false;
   const computed = createHash('sha256').update(verifier).digest();
@@ -355,6 +472,10 @@ function secureEqual(actual: string, expected: string): boolean {
   const actualBytes = Buffer.from(actual);
   const expectedBytes = Buffer.from(expected);
   return actualBytes.length === expectedBytes.length && timingSafeEqual(actualBytes, expectedBytes);
+}
+
+function hashSecret(secret: string): string {
+  return createHmac('sha256', 'oauth-client-secret').update(secret).digest('base64url');
 }
 
 function normalizeScope(value: string | null): string | undefined {
