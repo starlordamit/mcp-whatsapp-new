@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 
 export type WaxumMode = 'spawn' | 'client';
+export type McpTransport = 'stdio' | 'http';
 
 export interface SpawnConfig {
   binaryPath: string;
@@ -12,6 +13,12 @@ export interface SpawnConfig {
 }
 
 export interface Config {
+  transport: McpTransport;
+  http?: {
+    host: string;
+    port: number;
+    publicToken: string;
+  };
   mode: WaxumMode;
   sessionId: string;
   mediaDir: string;
@@ -39,6 +46,20 @@ function required(name: string): string {
  * the only bootstrap credential it accepts.
  */
 export function loadConfig(): Config {
+  const transport = (process.env.MCP_TRANSPORT ?? 'stdio') as McpTransport;
+  if (transport !== 'stdio' && transport !== 'http') {
+    throw new Error('MCP_TRANSPORT must be either "stdio" or "http"');
+  }
+
+  const http =
+    transport === 'http'
+      ? {
+          host: process.env.MCP_HOST ?? '0.0.0.0',
+          port: parsePort('MCP_PORT', process.env.MCP_PORT ?? '8080'),
+          publicToken: required('MCP_PUBLIC_TOKEN'),
+        }
+      : undefined;
+
   const sessionId = required('WAXUM_SESSION_ID');
   const mediaDir = path.resolve(process.env.WAXUM_MEDIA_DIR ?? './media');
 
@@ -47,6 +68,8 @@ export function loadConfig(): Config {
 
   if (mode === 'client') {
     return {
+      transport,
+      http,
       mode,
       sessionId,
       mediaDir,
@@ -65,6 +88,8 @@ export function loadConfig(): Config {
     process.env.WAXUM_DATABASE_URL ?? `sqlite://${path.join(workdir, 'waxum.db')}`;
 
   return {
+    transport,
+    http,
     mode,
     sessionId,
     mediaDir,
@@ -80,4 +105,12 @@ export function loadConfig(): Config {
       },
     },
   };
+}
+
+function parsePort(name: string, value: string): number {
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`${name} must be an integer between 1 and 65535`);
+  }
+  return port;
 }

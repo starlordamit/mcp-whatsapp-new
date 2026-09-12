@@ -1,7 +1,7 @@
 {
   "name": "waxum-mcp",
-  "version": "0.1.0",
-  "description": "MCP server for WhatsApp, backed by the waxum REST API gateway",
+  "version": "0.2.0",
+  "description": "MCP server for WhatsApp over stdio or Streamable HTTP, backed by the waxum REST API gateway",
   "license": "MIT",
   "type": "module",
   "bin": {
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "dotenv": "^16.6.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import 'dotenv/config';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import type { ChildProcess } from 'node:child_process';
@@ -14,6 +15,19 @@ import { registerDownloadMedia } from './tools/downloadMedia.js';
 import { registerListGroups } from './tools/listGroups.js';
 import { registerListChats } from './tools/listChats.js';
 import { registerSessionStatus } from './tools/sessionStatus.js';
+import { startHttpMcpServer } from './httpServer.js';
+
+function createMcpServer(ctx: Ctx): McpServer {
+  const server = new McpServer({ name: 'waxum-mcp', version: '0.2.0' });
+  registerSendMessage(server, ctx);
+  registerSendFile(server, ctx);
+  registerGetMessages(server, ctx);
+  registerDownloadMedia(server, ctx);
+  registerListGroups(server, ctx);
+  registerListChats(server, ctx);
+  registerSessionStatus(server, ctx);
+  return server;
+}
 
 async function main() {
   const config = loadConfig();
@@ -35,25 +49,38 @@ async function main() {
   const client = new WaxumClient(baseUrl, token);
   const ctx: Ctx = { client, sessionId: config.sessionId, mediaDir: config.mediaDir };
 
-  const server = new McpServer({ name: 'waxum-mcp', version: '0.1.0' });
-  registerSendMessage(server, ctx);
-  registerSendFile(server, ctx);
-  registerGetMessages(server, ctx);
-  registerDownloadMedia(server, ctx);
-  registerListGroups(server, ctx);
-  registerListChats(server, ctx);
-  registerSessionStatus(server, ctx);
-
-  const shutdown = () => {
+  let closeTransport: (() => Promise<void>) | undefined;
+  const shutdown = async () => {
+    process.off('SIGINT', shutdown);
+    process.off('SIGTERM', shutdown);
+    await closeTransport?.();
     child?.kill();
     process.exit(0);
   };
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  process.stderr.write(`[waxum-mcp] ready (mode=${config.mode}, session=${config.sessionId})\n`);
+  if (config.transport === 'http') {
+    const http = config.http!;
+    const running = await startHttpMcpServer({
+      host: http.host,
+      port: http.port,
+      publicToken: http.publicToken,
+      createServer: () => createMcpServer(ctx),
+    });
+    closeTransport = running.close;
+    process.stderr.write(
+      `[waxum-mcp] ready at http://${http.host}:${http.port}/mcp (mode=${config.mode}, waxum-session=${config.sessionId})\n`,
+    );
+  } else {
+    const server = createMcpServer(ctx);
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    closeTransport = () => transport.close();
+    process.stderr.write(
+      `[waxum-mcp] ready over stdio (mode=${config.mode}, waxum-session=${config.sessionId})\n`,
+    );
+  }
 }
 
 main().catch((err) => {

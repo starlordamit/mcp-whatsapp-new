@@ -1,8 +1,9 @@
 # waxum-mcp
 
 MCP server for WhatsApp, backed by the [waxum](https://github.com/imtaqin/waxum)
-REST API gateway. Exposes send/read/media tools to any MCP client
-(Claude Desktop, Claude Code, etc.) over stdio.
+REST API gateway. Exposes send/read/media tools to MCP clients over either
+stdio or the MCP Streamable HTTP transport. The HTTP mode is suitable for a
+remote ChatGPT custom app when it is published behind HTTPS.
 
 Requires waxum `>= 0.11.5` (needs `GET /messages/chat/{chat_jid}`).
 
@@ -24,6 +25,88 @@ that already-paired session.
 | `session_status` | Check connection/login status |
 
 ## Configuration
+
+### Streamable HTTP (ChatGPT web)
+
+HTTP mode exposes one endpoint at `/mcp`. It supports `POST`, `GET` (SSE), and
+`DELETE`, requires a bearer token on every request, and keeps an independent
+MCP server/transport pair for every negotiated `MCP-Session-Id`. Sessions are
+removed when the client sends `DELETE /mcp` or the transport closes.
+
+```env
+MCP_TRANSPORT=http
+MCP_HOST=0.0.0.0
+MCP_PORT=8080
+MCP_PUBLIC_TOKEN=replace-with-a-long-random-secret
+
+WAXUM_MODE=client
+WAXUM_BASE_URL=http://waxum:3451
+WAXUM_TOKEN=replace-with-your-waxum-token
+WAXUM_SESSION_ID=replace-with-your-paired-whatsapp-session-id
+```
+
+Start the compiled server:
+
+```bash
+npm ci
+npm run build
+npm start
+```
+
+Test authentication and initialization locally:
+
+```bash
+curl -i http://127.0.0.1:8080/mcp \
+  -H "Authorization: Bearer $MCP_PUBLIC_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+```
+
+The response includes an `MCP-Session-Id` header. Send that value on later
+POST/GET/DELETE requests. Multiple clients can initialize concurrently; do not
+reuse a session ID between clients.
+
+The Node process serves plain HTTP. Terminate TLS at a reverse proxy or hosting
+platform. Example Nginx location (inside an HTTPS `server` block):
+
+```nginx
+location /mcp {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+    proxy_read_timeout 3600s;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header Authorization $http_authorization;
+}
+```
+
+In ChatGPT web, enable developer mode for the eligible workspace/account,
+create a custom MCP app, set its endpoint to
+`https://whatsappmcp.example.com/mcp`, and configure the bearer value from
+`MCP_PUBLIC_TOKEN`. Then scan the tools and enable the draft app. The endpoint
+must be reachable from the public internet with a valid HTTPS certificate; a
+localhost or private-network URL will not work.
+
+`MCP_PUBLIC_TOKEN` protects access to every WhatsApp tool. Do not commit it,
+place it in a URL, reuse the Waxum token, or expose port 8080 directly to the
+internet. For a multi-user production deployment, replace the shared token
+with OAuth and bind each authenticated user to an authorized Waxum session.
+
+### stdio
+
+stdio remains the default for local MCP clients:
+
+```env
+MCP_TRANSPORT=stdio
+WAXUM_MODE=client
+WAXUM_BASE_URL=http://127.0.0.1:3451
+WAXUM_TOKEN=replace-with-your-waxum-token
+WAXUM_SESSION_ID=replace-with-your-session-id
+```
+
+### Waxum connection modes
 
 Two ways to point this server at waxum, chosen by `WAXUM_MODE` (or
 auto-detected: `client` if `WAXUM_BASE_URL` is set, else `spawn`).
