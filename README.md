@@ -36,7 +36,7 @@ removed when the client sends `DELETE /mcp` or the transport closes.
 ```env
 MCP_TRANSPORT=http
 MCP_HOST=0.0.0.0
-MCP_PORT=8080
+MCP_PORT=8088
 MCP_AUTH_MODE=oauth
 
 OAUTH_ISSUER=https://whatsappmcp.example.com
@@ -80,7 +80,7 @@ openssl rand -base64 24    # login password
 openssl rand -base64 64    # signing secret
 ```
 
-For local-only testing, `OAUTH_ISSUER=http://localhost:8080` is accepted. A
+For local-only testing, `OAUTH_ISSUER=http://localhost:8088` is accepted. A
 deployed issuer must be the exact public HTTPS origin, without `/mcp` or a
 trailing path. Set `OAUTH_REDIRECT_URIS` to ChatGPT's exact OAuth callback URL
 when it is known. If it is empty, HTTPS callbacks (and localhost HTTP callbacks)
@@ -89,7 +89,7 @@ are accepted and each authorization code is still bound to its original URI.
 After obtaining an OAuth access token, test MCP initialization locally:
 
 ```bash
-curl -i http://127.0.0.1:8080/mcp \
+curl -i http://127.0.0.1:8088/mcp \
   -H "Authorization: Bearer $OAUTH_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
@@ -106,7 +106,7 @@ process. Example for a dedicated Nginx HTTPS host:
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:8080;
+    proxy_pass http://127.0.0.1:8088;
     proxy_http_version 1.1;
     proxy_buffering off;
     proxy_read_timeout 3600s;
@@ -126,7 +126,7 @@ must be reachable from the public internet with a valid HTTPS certificate; a
 localhost or private-network URL will not work.
 
 Do not commit any OAuth or Waxum secret, reuse secrets between purposes, or
-expose port 8080 directly to the internet. This built-in provider intentionally
+expose port 8088 directly to the internet. This built-in provider intentionally
 supports one local account. Multiple ChatGPT MCP sessions are supported, but
 they all act as the configured local user and use the configured Waxum session.
 Use a full identity provider if you later need separate users, revocation,
@@ -201,7 +201,7 @@ is already deployed and paired.
 
 An optional `local-waxum` profile starts three containers:
 
-- `mcp`: this repository, serving OAuth and MCP on port 8080
+- `mcp`: this repository, serving OAuth and MCP on port 8088
 - `waxum`: the official `fdciabdul/waxum` image
 - `nats`: Waxum's JetStream dependency
 
@@ -229,9 +229,9 @@ docker compose --profile local-waxum up -d --build
 The new local Waxum data volume will not contain an existing paired WhatsApp
 session. Pair `WAXUM_SESSION_ID` against it before invoking WhatsApp tools.
 
-The MCP service exposes port 8080 only on the Compose network; it does not claim
-host port 8080. Configure the hosting gateway/reverse proxy to target service
-`mcp` on container port 8080. Waxum and NATS also stay private. Persistent named
+The MCP service exposes port 8088 only on the Compose network; it does not claim
+host port 8088. Configure the hosting gateway/reverse proxy to target service
+`mcp` on container port 8088. Waxum and NATS also stay private. Persistent named
 volumes retain Waxum's database, WhatsApp session state, NATS state, and
 downloaded MCP media across restarts.
 
@@ -244,5 +244,5 @@ curl https://whatsappmcp.example.com/.well-known/oauth-protected-resource/mcp
 ```
 
 The public reverse proxy must send `/healthz`, `/.well-known/*`, `/oauth/*`, and
-`/mcp` to the `mcp` service on port 8080. Do not route these paths to the Waxum
+`/mcp` to the `mcp` service on port 8088. Do not route these paths to the Waxum
 container on port 3451.

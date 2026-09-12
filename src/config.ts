@@ -128,7 +128,7 @@ function loadHttpConfig(): NonNullable<Config['http']> {
     : { mode, publicToken: required('MCP_PUBLIC_TOKEN') };
   return {
     host: process.env.MCP_HOST ?? '0.0.0.0',
-    port: parsePort('MCP_PORT', process.env.MCP_PORT ?? '8080'),
+    port: parsePort('MCP_PORT', process.env.MCP_PORT ?? '8088'),
     auth,
   };
 }

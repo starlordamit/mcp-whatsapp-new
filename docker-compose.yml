@@ -35,7 +35,7 @@ services:
     environment:
       MCP_TRANSPORT: http
       MCP_HOST: 0.0.0.0
-      MCP_PORT: "8080"
+      MCP_PORT: "8088"
       MCP_AUTH_MODE: oauth
       OAUTH_ISSUER: ${OAUTH_ISSUER:?Set OAUTH_ISSUER to the public HTTPS origin}
       OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:?Set OAUTH_CLIENT_ID in .env}
@@ -52,7 +52,7 @@ services:
     volumes:
       - mcp_media:/app/media
     expose:
-      - "8080"
+      - "8088"
     restart: unless-stopped
 
 volumes:
