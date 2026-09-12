@@ -192,3 +192,42 @@ npm run dev     # run directly with tsx
 npm run build   # compile to dist/
 npm start       # run the compiled build
 ```
+
+## Docker Compose
+
+The included stack starts three containers:
+
+- `mcp`: this repository, serving OAuth and MCP on port 8080
+- `waxum`: the official `fdciabdul/waxum` image
+- `nats`: Waxum's JetStream dependency
+
+Copy the environment template, replace every placeholder, and set
+`OAUTH_ISSUER` to the MCP container's public HTTPS origin:
+
+```bash
+cp .env.example .env
+docker compose config
+docker compose up -d --build
+docker compose ps
+```
+
+For the bundled Waxum container, remove `WAXUM_BASE_URL` from `.env` (or set it
+to `http://waxum:3451`). To keep using an already deployed Waxum instance, set
+`WAXUM_BASE_URL` to that instance instead; the MCP container will use it while
+the bundled Waxum container remains available for local migration/testing.
+
+Only port 8080 is published. Waxum and NATS stay on the private Compose network.
+Persistent named volumes retain Waxum's database, WhatsApp session state, NATS
+state, and downloaded MCP media across restarts.
+
+Check the routes before configuring ChatGPT:
+
+```bash
+curl http://127.0.0.1:8080/healthz
+curl http://127.0.0.1:8080/.well-known/oauth-authorization-server
+curl http://127.0.0.1:8080/.well-known/oauth-protected-resource/mcp
+```
+
+The public reverse proxy must send `/healthz`, `/.well-known/*`, `/oauth/*`, and
+`/mcp` to the `mcp` service on port 8080. Do not route these paths to the Waxum
+container on port 3451.

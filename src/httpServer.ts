@@ -30,6 +30,16 @@ export async function startHttpMcpServer(
   const httpServer = createNodeServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      if (url.pathname === '/healthz') {
+        if (req.method !== 'GET') {
+          res.setHeader('Allow', 'GET');
+          sendText(res, 405, 'Method Not Allowed');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ status: 'ok', transport: 'http', auth: options.auth.mode }));
+        return;
+      }
       if (oauth && await oauth.handle(req, res, url)) return;
 
       if (url.pathname !== MCP_PATH) {

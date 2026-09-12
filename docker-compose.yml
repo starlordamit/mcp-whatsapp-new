@@ -1,0 +1,63 @@
+services:
+  nats:
+    image: nats:2.10-alpine
+    command: ["--jetstream", "--store_dir=/data"]
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+
+  waxum:
+    image: fdciabdul/waxum:${WAXUM_TAG:-latest}
+    environment:
+      SUPERADMIN_TOKEN: ${WAXUM_TOKEN:?Set WAXUM_TOKEN in .env}
+      PORT: "3451"
+      DATABASE_URL: sqlite:///app/data/waxum.db
+      WHATSAPP_STORAGE_PATH: /app/whatsapp_sessions
+      NATS_URL: nats://nats:4222
+      WA_AUTO_RECONNECT_ON_START: "1"
+      RUST_LOG: waxum=info,tower_http=info
+    volumes:
+      - waxum_data:/app/data
+      - whatsapp_sessions:/app/whatsapp_sessions
+    expose:
+      - "3451"
+    depends_on:
+      nats:
+        condition: service_started
+    restart: unless-stopped
+
+  mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      MCP_TRANSPORT: http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: "8080"
+      MCP_AUTH_MODE: oauth
+      OAUTH_ISSUER: ${OAUTH_ISSUER:?Set OAUTH_ISSUER to the public HTTPS origin}
+      OAUTH_CLIENT_ID: ${OAUTH_CLIENT_ID:?Set OAUTH_CLIENT_ID in .env}
+      OAUTH_CLIENT_SECRET: ${OAUTH_CLIENT_SECRET:?Set OAUTH_CLIENT_SECRET in .env}
+      OAUTH_USERNAME: ${OAUTH_USERNAME:?Set OAUTH_USERNAME in .env}
+      OAUTH_PASSWORD: ${OAUTH_PASSWORD:?Set OAUTH_PASSWORD in .env}
+      OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:?Set OAUTH_SIGNING_SECRET in .env}
+      OAUTH_REDIRECT_URIS: ${OAUTH_REDIRECT_URIS:-}
+      WAXUM_MODE: client
+      WAXUM_BASE_URL: ${WAXUM_BASE_URL:-http://waxum:3451}
+      WAXUM_TOKEN: ${WAXUM_TOKEN:?Set WAXUM_TOKEN in .env}
+      WAXUM_SESSION_ID: ${WAXUM_SESSION_ID:?Set WAXUM_SESSION_ID in .env}
+      WAXUM_MEDIA_DIR: /app/media
+    volumes:
+      - mcp_media:/app/media
+    ports:
+      - "${MCP_BIND_PORT:-8080}:8080"
+    depends_on:
+      waxum:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  nats_data:
+  waxum_data:
+  whatsapp_sessions:
+  mcp_media:
