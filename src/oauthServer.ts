@@ -431,7 +431,11 @@ export class LocalOAuthServer {
     res.writeHead(status, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      // Do not set form-action here. The authorization form posts locally, but
+      // its successful POST redirects to ChatGPT's registered callback. Some
+      // browsers apply form-action to the complete redirect chain and would
+      // therefore block that external OAuth callback.
+      'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'",
       'X-Content-Type-Options': 'nosniff',
       'X-Frame-Options': 'DENY',
     });
