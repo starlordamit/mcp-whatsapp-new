@@ -1,6 +1,7 @@
 services:
   nats:
     image: nats:2.10-alpine
+    profiles: ["local-waxum"]
     command: ["--jetstream", "--store_dir=/data"]
     volumes:
       - nats_data:/data
@@ -8,6 +9,7 @@ services:
 
   waxum:
     image: fdciabdul/waxum:${WAXUM_TAG:-latest}
+    profiles: ["local-waxum"]
     environment:
       SUPERADMIN_TOKEN: ${WAXUM_TOKEN:?Set WAXUM_TOKEN in .env}
       PORT: "3451"
@@ -43,7 +45,7 @@ services:
       OAUTH_SIGNING_SECRET: ${OAUTH_SIGNING_SECRET:?Set OAUTH_SIGNING_SECRET in .env}
       OAUTH_REDIRECT_URIS: ${OAUTH_REDIRECT_URIS:-}
       WAXUM_MODE: client
-      WAXUM_BASE_URL: ${WAXUM_BASE_URL:-http://waxum:3451}
+      WAXUM_BASE_URL: ${WAXUM_BASE_URL:?Set WAXUM_BASE_URL to the Waxum API URL}
       WAXUM_TOKEN: ${WAXUM_TOKEN:?Set WAXUM_TOKEN in .env}
       WAXUM_SESSION_ID: ${WAXUM_SESSION_ID:?Set WAXUM_SESSION_ID in .env}
       WAXUM_MEDIA_DIR: /app/media
@@ -51,9 +53,6 @@ services:
       - mcp_media:/app/media
     ports:
       - "${MCP_BIND_PORT:-8080}:8080"
-    depends_on:
-      waxum:
-        condition: service_healthy
     restart: unless-stopped
 
 volumes:

@@ -195,7 +195,11 @@ npm start       # run the compiled build
 
 ## Docker Compose
 
-The included stack starts three containers:
+The default Compose deployment starts the `mcp` container. It connects to the
+Waxum server configured by `WAXUM_BASE_URL`, which is the right mode when Waxum
+is already deployed and paired.
+
+An optional `local-waxum` profile starts three containers:
 
 - `mcp`: this repository, serving OAuth and MCP on port 8080
 - `waxum`: the official `fdciabdul/waxum` image
@@ -211,10 +215,19 @@ docker compose up -d --build
 docker compose ps
 ```
 
-For the bundled Waxum container, remove `WAXUM_BASE_URL` from `.env` (or set it
-to `http://waxum:3451`). To keep using an already deployed Waxum instance, set
-`WAXUM_BASE_URL` to that instance instead; the MCP container will use it while
-the bundled Waxum container remains available for local migration/testing.
+To keep using an already deployed Waxum instance, set `WAXUM_BASE_URL` to that
+instance and use the normal command shown above. The unhealthy state of an
+unused local Waxum image cannot block MCP startup.
+
+To run a new Waxum instance in the same Compose network instead, set
+`WAXUM_BASE_URL=http://waxum:3451` and explicitly enable its profile:
+
+```bash
+docker compose --profile local-waxum up -d --build
+```
+
+The new local Waxum data volume will not contain an existing paired WhatsApp
+session. Pair `WAXUM_SESSION_ID` against it before invoking WhatsApp tools.
 
 Only port 8080 is published. Waxum and NATS stay on the private Compose network.
 Persistent named volumes retain Waxum's database, WhatsApp session state, NATS
