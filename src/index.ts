@@ -18,7 +18,7 @@ import { registerSessionStatus } from './tools/sessionStatus.js';
 import { startHttpMcpServer } from './httpServer.js';
 
 function createMcpServer(ctx: Ctx): McpServer {
-  const server = new McpServer({ name: 'waxum-mcp', version: '0.2.0' });
+  const server = new McpServer({ name: 'waxum-mcp', version: '0.3.0' });
   registerSendMessage(server, ctx);
   registerSendFile(server, ctx);
   registerGetMessages(server, ctx);
@@ -65,7 +65,7 @@ async function main() {
     const running = await startHttpMcpServer({
       host: http.host,
       port: http.port,
-      publicToken: http.publicToken,
+      auth: http.auth,
       createServer: () => createMcpServer(ctx),
     });
     closeTransport = running.close;

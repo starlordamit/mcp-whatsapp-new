@@ -28,8 +28,8 @@ that already-paired session.
 
 ### Streamable HTTP (ChatGPT web)
 
-HTTP mode exposes one endpoint at `/mcp`. It supports `POST`, `GET` (SSE), and
-`DELETE`, requires a bearer token on every request, and keeps an independent
+HTTP mode exposes the MCP endpoint at `/mcp`. It supports `POST`, `GET` (SSE), and
+`DELETE`, requires OAuth access tokens on every request, and keeps an independent
 MCP server/transport pair for every negotiated `MCP-Session-Id`. Sessions are
 removed when the client sends `DELETE /mcp` or the transport closes.
 
@@ -37,7 +37,16 @@ removed when the client sends `DELETE /mcp` or the transport closes.
 MCP_TRANSPORT=http
 MCP_HOST=0.0.0.0
 MCP_PORT=8080
-MCP_PUBLIC_TOKEN=replace-with-a-long-random-secret
+MCP_AUTH_MODE=oauth
+
+OAUTH_ISSUER=https://whatsappmcp.example.com
+OAUTH_CLIENT_ID=replace-with-generated-client-id
+OAUTH_CLIENT_SECRET=replace-with-generated-client-secret
+OAUTH_USERNAME=amit
+OAUTH_PASSWORD=replace-with-your-private-password
+OAUTH_SIGNING_SECRET=replace-with-at-least-32-random-bytes
+# Optional exact ChatGPT callback URL(s), comma-separated
+OAUTH_REDIRECT_URIS=
 
 WAXUM_MODE=client
 WAXUM_BASE_URL=http://waxum:3451
@@ -53,11 +62,35 @@ npm run build
 npm start
 ```
 
-Test authentication and initialization locally:
+The built-in OAuth server provides:
+
+- `GET /.well-known/oauth-authorization-server`
+- `GET /.well-known/oauth-protected-resource/mcp`
+- `GET/POST /oauth/authorize`
+- `POST /oauth/token`
+- Authorization Code flow with mandatory PKCE S256
+- One-hour signed access tokens and 30-day refresh tokens
+
+Generate independent secrets, for example:
+
+```bash
+openssl rand -hex 16       # client ID
+openssl rand -base64 32    # client secret
+openssl rand -base64 24    # login password
+openssl rand -base64 64    # signing secret
+```
+
+For local-only testing, `OAUTH_ISSUER=http://localhost:8080` is accepted. A
+deployed issuer must be the exact public HTTPS origin, without `/mcp` or a
+trailing path. Set `OAUTH_REDIRECT_URIS` to ChatGPT's exact OAuth callback URL
+when it is known. If it is empty, HTTPS callbacks (and localhost HTTP callbacks)
+are accepted and each authorization code is still bound to its original URI.
+
+After obtaining an OAuth access token, test MCP initialization locally:
 
 ```bash
 curl -i http://127.0.0.1:8080/mcp \
-  -H "Authorization: Bearer $MCP_PUBLIC_TOKEN" \
+  -H "Authorization: Bearer $OAUTH_ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
   --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
@@ -68,10 +101,11 @@ POST/GET/DELETE requests. Multiple clients can initialize concurrently; do not
 reuse a session ID between clients.
 
 The Node process serves plain HTTP. Terminate TLS at a reverse proxy or hosting
-platform. Example Nginx location (inside an HTTPS `server` block):
+platform. OAuth discovery, login, token, and MCP routes must all reach the Node
+process. Example for a dedicated Nginx HTTPS host:
 
 ```nginx
-location /mcp {
+location / {
     proxy_pass http://127.0.0.1:8080;
     proxy_http_version 1.1;
     proxy_buffering off;
@@ -84,15 +118,22 @@ location /mcp {
 
 In ChatGPT web, enable developer mode for the eligible workspace/account,
 create a custom MCP app, set its endpoint to
-`https://whatsappmcp.example.com/mcp`, and configure the bearer value from
-`MCP_PUBLIC_TOKEN`. Then scan the tools and enable the draft app. The endpoint
+`https://whatsappmcp.example.com/mcp`, select OAuth, and enter
+`OAUTH_CLIENT_ID` and `OAUTH_CLIENT_SECRET`. During connection, sign into the
+local authorization page with `OAUTH_USERNAME` and `OAUTH_PASSWORD`. Then scan
+the tools and enable the draft app. The endpoint
 must be reachable from the public internet with a valid HTTPS certificate; a
 localhost or private-network URL will not work.
 
-`MCP_PUBLIC_TOKEN` protects access to every WhatsApp tool. Do not commit it,
-place it in a URL, reuse the Waxum token, or expose port 8080 directly to the
-internet. For a multi-user production deployment, replace the shared token
-with OAuth and bind each authenticated user to an authorized Waxum session.
+Do not commit any OAuth or Waxum secret, reuse secrets between purposes, or
+expose port 8080 directly to the internet. This built-in provider intentionally
+supports one local account. Multiple ChatGPT MCP sessions are supported, but
+they all act as the configured local user and use the configured Waxum session.
+Use a full identity provider if you later need separate users, revocation,
+auditing, MFA, or account recovery.
+
+For compatibility, shared-token authentication is still available by setting
+`MCP_AUTH_MODE=token` and `MCP_PUBLIC_TOKEN` instead of the OAuth variables.
 
 ### stdio
 

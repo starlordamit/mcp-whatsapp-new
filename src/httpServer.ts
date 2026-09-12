@@ -3,6 +3,7 @@ import { createServer as createNodeServer, type IncomingMessage, type ServerResp
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { LocalOAuthServer, type OAuthConfig } from './oauthServer.js';
 
 const MCP_PATH = '/mcp';
 const MAX_REQUEST_BYTES = 1024 * 1024;
@@ -10,7 +11,9 @@ const MAX_REQUEST_BYTES = 1024 * 1024;
 export interface HttpMcpServerOptions {
   host: string;
   port: number;
-  publicToken: string;
+  auth:
+    | { mode: 'token'; publicToken: string }
+    | { mode: 'oauth'; oauth: OAuthConfig };
   createServer: () => McpServer;
 }
 
@@ -22,17 +25,23 @@ export async function startHttpMcpServer(
   options: HttpMcpServerOptions,
 ): Promise<RunningHttpMcpServer> {
   const transports = new Map<string, StreamableHTTPServerTransport>();
+  const oauth = options.auth.mode === 'oauth' ? new LocalOAuthServer(options.auth.oauth) : undefined;
 
   const httpServer = createNodeServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
+      if (oauth && await oauth.handle(req, res, url)) return;
+
       if (url.pathname !== MCP_PATH) {
         sendText(res, 404, 'Not Found');
         return;
       }
 
-      if (!isAuthorized(req, options.publicToken)) {
-        res.setHeader('WWW-Authenticate', 'Bearer');
+      if (!isAuthorized(req, options.auth, oauth)) {
+        const challenge = oauth
+          ? `Bearer resource_metadata="${oauth.protectedResourceMetadataUrl}"`
+          : 'Bearer';
+        res.setHeader('WWW-Authenticate', challenge);
         sendText(res, 401, 'Unauthorized');
         return;
       }
@@ -112,10 +121,17 @@ export async function startHttpMcpServer(
   };
 }
 
-function isAuthorized(req: IncomingMessage, expectedToken: string): boolean {
+function isAuthorized(
+  req: IncomingMessage,
+  auth: HttpMcpServerOptions['auth'],
+  oauth: LocalOAuthServer | undefined,
+): boolean {
   const authorization = headerValue(req, 'authorization');
   if (!authorization?.startsWith('Bearer ')) return false;
-  const actual = Buffer.from(authorization.slice('Bearer '.length));
+  const token = authorization.slice('Bearer '.length);
+  if (auth.mode === 'oauth') return oauth?.validateAccessToken(token) ?? false;
+  const expectedToken = auth.publicToken;
+  const actual = Buffer.from(token);
   const expected = Buffer.from(expectedToken);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }

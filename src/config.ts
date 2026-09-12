@@ -1,8 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
+import type { OAuthConfig } from './oauthServer.js';
 
 export type WaxumMode = 'spawn' | 'client';
 export type McpTransport = 'stdio' | 'http';
+export type McpAuthMode = 'token' | 'oauth';
 
 export interface SpawnConfig {
   binaryPath: string;
@@ -17,7 +19,9 @@ export interface Config {
   http?: {
     host: string;
     port: number;
-    publicToken: string;
+    auth:
+      | { mode: 'token'; publicToken: string }
+      | { mode: 'oauth'; oauth: OAuthConfig };
   };
   mode: WaxumMode;
   sessionId: string;
@@ -51,14 +55,7 @@ export function loadConfig(): Config {
     throw new Error('MCP_TRANSPORT must be either "stdio" or "http"');
   }
 
-  const http =
-    transport === 'http'
-      ? {
-          host: process.env.MCP_HOST ?? '0.0.0.0',
-          port: parsePort('MCP_PORT', process.env.MCP_PORT ?? '8080'),
-          publicToken: required('MCP_PUBLIC_TOKEN'),
-        }
-      : undefined;
+  const http = transport === 'http' ? loadHttpConfig() : undefined;
 
   const sessionId = required('WAXUM_SESSION_ID');
   const mediaDir = path.resolve(process.env.WAXUM_MEDIA_DIR ?? './media');
@@ -105,6 +102,55 @@ export function loadConfig(): Config {
       },
     },
   };
+}
+
+function loadHttpConfig(): NonNullable<Config['http']> {
+  const mode = (process.env.MCP_AUTH_MODE ?? 'token') as McpAuthMode;
+  if (mode !== 'token' && mode !== 'oauth') {
+    throw new Error('MCP_AUTH_MODE must be either "token" or "oauth"');
+  }
+  const auth: NonNullable<Config['http']>['auth'] = mode === 'oauth'
+    ? {
+        mode,
+        oauth: {
+          issuer: validateIssuer(required('OAUTH_ISSUER')),
+          clientId: required('OAUTH_CLIENT_ID'),
+          clientSecret: minimumLength('OAUTH_CLIENT_SECRET', 24),
+          username: required('OAUTH_USERNAME'),
+          password: minimumLength('OAUTH_PASSWORD', 12),
+          signingSecret: minimumLength('OAUTH_SIGNING_SECRET', 32),
+          redirectUris: (process.env.OAUTH_REDIRECT_URIS ?? '')
+            .split(',')
+            .map(value => value.trim())
+            .filter(Boolean),
+        },
+      }
+    : { mode, publicToken: required('MCP_PUBLIC_TOKEN') };
+  return {
+    host: process.env.MCP_HOST ?? '0.0.0.0',
+    port: parsePort('MCP_PORT', process.env.MCP_PORT ?? '8080'),
+    auth,
+  };
+}
+
+function validateIssuer(value: string): string {
+  const issuer = value.replace(/\/+$/, '');
+  const url = new URL(issuer);
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
+    throw new Error('OAUTH_ISSUER must use HTTPS (HTTP is allowed only for localhost testing)');
+  }
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+    throw new Error('OAUTH_ISSUER must be an origin without a path, query, or fragment');
+  }
+  return issuer;
+}
+
+function minimumLength(name: string, length: number): string {
+  const value = required(name);
+  if (Buffer.byteLength(value, 'utf8') < length) {
+    throw new Error(`${name} must be at least ${length} bytes`);
+  }
+  return value;
 }
 
 function parsePort(name: string, value: string): number {
