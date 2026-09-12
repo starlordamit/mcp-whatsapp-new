@@ -71,6 +71,7 @@ The built-in OAuth server provides:
 - `POST /oauth/register` for Dynamic Client Registration (DCR)
 - Authorization Code flow with mandatory PKCE S256
 - RFC 9207 authorization-response issuer binding for stable callbacks
+- POST-safe 303 callback redirect with a manual ChatGPT fallback link
 - One-hour signed access tokens and 30-day refresh tokens
 
 Generate independent secrets, for example:

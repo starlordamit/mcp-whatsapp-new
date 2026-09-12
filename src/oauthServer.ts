@@ -183,8 +183,16 @@ export class LocalOAuthServer {
     redirect.searchParams.set('iss', this.config.issuer);
     const state = form.get('state');
     if (state) redirect.searchParams.set('state', state);
-    res.writeHead(302, { Location: redirect.toString(), 'Cache-Control': 'no-store' });
-    res.end();
+    const location = redirect.toString();
+    res.writeHead(303, {
+      Location: location,
+      'Cache-Control': 'no-store',
+      'Referrer-Policy': 'no-referrer',
+      'Content-Type': 'text/html; charset=utf-8',
+    });
+    res.end(
+      `<!doctype html><html><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>Authorization complete</title></head><body><p>Authorization complete.</p><p><a href="${escapeHtml(location)}">Return to ChatGPT</a></p></body></html>`,
+    );
   }
 
   private async token(req: IncomingMessage, res: ServerResponse): Promise<void> {
